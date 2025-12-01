@@ -8,6 +8,7 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/ollama"
 	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/ollama/api"
 )
 
 func Ollama() {
@@ -55,6 +56,9 @@ func OllamaStream() {
 	chatModel, err := ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 		BaseURL: "http://localhost:11434",
 		Model:   "qwen3:8b",
+		Thinking: &api.ThinkValue{
+			Value: false,
+		},
 	})
 
 	if err != nil {
