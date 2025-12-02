@@ -3,5 +3,6 @@ package main
 func main() {
 	// ToolInvokDemo()
 	// ToolNewToolDemo()
-	ToolsCallDemo()
+	// ToolsCallDemo()
+	Demo()
 }
