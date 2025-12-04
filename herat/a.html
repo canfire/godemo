@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>粒子爱心 - 手势互动版</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+            color: white;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #video-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 160px;
+            height: 120px;
+            z-index: 2;
+            border: 2px solid rgba(255, 105, 180, 0.5);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #111;
+        }
+
+        #input_video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* 镜像显示 */
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            z-index: 3;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px 40px;
+            border-radius: 15px;
+            border: 1px solid #ff69b4;
+        }
+
+        .status-badge {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 2;
+            padding: 8px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(5px);
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        #start-btn {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #ff69b4;
+            border: none;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div class="status-badge" id="status-text">等待摄像头...</div>
+
+    <div id="loading">
+        <div>需要摄像头权限以识别手势</div>
+        <div style="font-size: 14px; color: #aaa; margin-top:5px;">✋ 张开手掌：放大 | ✊ 握拳：缩小</div>
+        <button id="start-btn" onclick="startApp()">开启体验</button>
+    </div>
+
+    <div id="video-container">
+        <video id="input_video" playsinline></video>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+<script>
+    // --- 配置参数 ---
+    const CONFIG = {
+        particleCount: 600,       
+        baseSize: 15,             
+        maxSize: 60,              
+        zoomSpeed: 0.3,           
+        shrinkSpeed: 0.5,         
+        colors: ['#ff3366', '#ff6b81', '#ff99aa', '#ffb6c1']
+    };
+
+    // --- 变量初始化 ---
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status-text');
+    let width, height;
+    
+    // 状态变量
+    let currentScale = CONFIG.baseSize; 
+    let targetScale = CONFIG.baseSize;  
+    
+    // --- 粒子系统 ---
+    class Particle {
+        constructor(isInner = false) {
+            this.isInner = isInner; 
+            this.reset();
+        }
+
+        reset() {
+            let t = Math.random() * 2 * Math.PI;
+            let d = Math.sqrt(Math.random()); 
+            if(this.isInner) d = d * 0.5; 
+
+            let x = 16 * Math.pow(Math.sin(t), 3);
+            let y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+
+            this.x = x * d;
+            this.y = y * d;
+            
+            this.size = Math.random() * 2 + 1;
+            this.speedX = (Math.random() - 0.5) * 0.5;
+            this.speedY = (Math.random() - 0.5) * 0.5;
+            this.color = CONFIG.colors[Math.floor(Math.random() * CONFIG.colors.length)];
+            this.alpha = Math.random() * 0.5 + 0.5;
+            this.decay = Math.random() * 0.02 + 0.005;
+        }
+
+        update() {
+            this.x += this.speedX;
+            this.y += this.speedY;
+            this.alpha -= this.decay;
+
+            if (this.alpha <= 0) {
+                this.reset();
+            }
+        }
+
+        draw(scale) {
+            ctx.globalAlpha = this.alpha;
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            let drawX = width / 2 + this.x * scale;
+            let drawY = height / 2 + this.y * scale;
+            
+            ctx.arc(drawX, drawY, this.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    let particles = [];
+    let innerParticles = [];
+
+    function initParticles() {
+        particles = [];
+        innerParticles = [];
+        for (let i = 0; i < CONFIG.particleCount; i++) {
+            particles.push(new Particle(false));
+        }
+        for (let i = 0; i < CONFIG.particleCount / 2; i++) {
+            innerParticles.push(new Particle(true));
+        }
+    }
+
+    function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+    initParticles();
+
+    // --- 渲染循环 ---
+    function render() {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.fillRect(0, 0, width, height);
+
+        const diff = targetScale - currentScale;
+        if (Math.abs(diff) > 0.1) {
+            currentScale += diff * (targetScale > currentScale ? CONFIG.zoomSpeed : CONFIG.shrinkSpeed);
+        } else {
+            currentScale = targetScale;
+        }
+
+        particles.forEach(p => {
+            p.update();
+            p.draw(currentScale);
+        });
+
+        if (currentScale > CONFIG.baseSize * 1.5) {
+            innerParticles.forEach(p => {
+                p.update();
+                p.draw(currentScale * 0.8);
+            });
+        }
+        
+        requestAnimationFrame(render);
+    }
+    render();
+
+    // --- MediaPipe 手势识别逻辑 ---
+    function distance(p1, p2) {
+        return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    }
+
+    function onResults(results) {
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+            
+            const wrist = landmarks[0];
+            const middleMCP = landmarks[9];
+            const palmSize = distance(wrist, middleMCP); 
+
+            let tips = [8, 12, 16, 20]; 
+            let totalTipDist = 0;
+            
+            tips.forEach(idx => {
+                totalTipDist += distance(wrist, landmarks[idx]);
+            });
+            
+            const avgTipDist = totalTipDist / 4;
+            const openness = avgTipDist / palmSize; 
+
+            if (openness > 1.6) {
+                statusText.innerText = "状态：放大 (Open)";
+                statusText.style.background = "rgba(255, 51, 102, 0.4)";
+                targetScale = CONFIG.maxSize; 
+            } else if (openness < 1.2) {
+                statusText.innerText = "状态：缩小 (Fist)";
+                statusText.style.background = "rgba(100, 100, 100, 0.4)";
+                targetScale = CONFIG.baseSize; 
+            }
+
+        } else {
+            statusText.innerText = "未检测到手势";
+            statusText.style.background = "rgba(255, 255, 255, 0.1)";
+        }
+    }
+
+    // --- 初始化 MediaPipe ---
+    const videoElement = document.getElementById('input_video');
+    const loadingDiv = document.getElementById('loading');
+    let camera;
+
+    function startApp() {
+        // 【修正点】直接更新 innerHTML，不再尝试去获取和隐藏已经不存在的 button
+        loadingDiv.innerHTML = "<div>正在初始化模型，请稍候...</div>";
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults(onResults);
+
+        camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 320,
+            height: 240
+        });
+
+        camera.start()
+            .then(() => {
+                loadingDiv.style.display = 'none';
+            })
+            .catch(err => {
+                console.error(err);
+                loadingDiv.innerHTML = `<div style="color:red">无法启动摄像头。<br>Ubuntu用户请检查：<br>1. 浏览器权限是否允许<br>2. 是否使用HTTPS或localhost</div>`;
+            });
+    }
+
+</script>
+</body>
+</html>

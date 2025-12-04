@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D 粒子爱心 - 炫酷手势版</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        #container { width: 100%; height: 100vh; }
+        
+        #status-badge {
+            position: absolute; top: 20px; left: 20px; z-index: 10;
+            padding: 8px 15px; background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px; backdrop-filter: blur(10px);
+            color: white; font-family: sans-serif; font-size: 14px;
+            border: 1px solid rgba(255, 105, 180, 0.3);
+            transition: all 0.3s;
+        }
+        #video-container {
+            position: absolute; bottom: 20px; left: 20px;
+            width: 160px; height: 120px; z-index: 10;
+            border: 2px solid rgba(255, 105, 180, 0.5);
+            border-radius: 10px; overflow: hidden; background: #111;
+            opacity: 0.7; transition: opacity 0.3s;
+        }
+        #video-container:hover { opacity: 1; }
+        #input_video {
+            width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);
+        }
+        #loading-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 20;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            color: white; font-family: sans-serif;
+        }
+        #start-btn {
+            margin-top: 20px; padding: 12px 30px;
+            background: linear-gradient(45deg, #ff3366, #ff6b81);
+            border: none; color: white; border-radius: 25px;
+            cursor: pointer; font-size: 18px; font-weight: bold;
+            box-shadow: 0 0 20px rgba(255, 51, 102, 0.5);
+            transition: transform 0.2s;
+        }
+        #start-btn:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+
+    <div id="status-badge">等待摄像头...</div>
+    
+    <div id="loading-screen">
+        <h1 style="color:#ff6b81; text-shadow: 0 0 10px #ff3366;">3D 粒子爱心</h1>
+        <p>✋ 张开手掌：巨型化 | ✊ 握拳：恢复</p>
+        <button id="start-btn" onclick="init()">开启体验</button>
+    </div>
+
+    <div id="video-container">
+        <video id="input_video" playsinline></video>
+    </div>
+
+    <div id="container"></div>
+
+    <!-- 使用 importmap 方式加载 Three.js -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // ================= Configuration =================
+        const CONFIG = {
+            particleCount: 15000,
+            baseScale: 1.2,
+            maxScale: 5.5,
+            lerpSpeed: 0.08,
+            colors: [new THREE.Color(0xff3366), new THREE.Color(0xff99aa), new THREE.Color(0xffffff)]
+        };
+
+        let scene, camera, renderer, composer;
+        let heartGroup, particlesMesh;
+        let currentScale = CONFIG.baseScale;
+        let targetScale = CONFIG.baseScale;
+        const statusBadge = document.getElementById('status-badge');
+
+        // ================= Three.js Core Setup =================
+        function initThree() {
+            const container = document.getElementById('container');
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.0015);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 2000);
+            camera.position.set(0, 0, 500);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.toneMapping = THREE.ReinhardToneMapping;
+            container.appendChild(renderer.domElement);
+
+            // --- Post Processing (Bloom Effect) ---
+            const renderScene = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                2.5, // 强度 (提升到 2.5)
+                0.8, // 半径 (扩大光晕范围)
+                0.05 // 阈值 (降低让更多粒子发光)
+            );
+
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+
+            createHeartParticles();
+            
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        // ================= Particle System Generation =================
+        function createTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            gradient.addColorStop(0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(0.2, 'rgba(255,150,200,1)');
+            gradient.addColorStop(0.5, 'rgba(255,100,150,0.9)');
+            gradient.addColorStop(1, 'rgba(255,50,100,0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 64, 64);
+            const texture = new THREE.Texture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        function createHeartParticles() {
+            heartGroup = new THREE.Group();
+            scene.add(heartGroup);
+
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            const colors = [];
+            const sizes = [];
+
+            const texture = createTexture();
+
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                let t = Math.random() * Math.PI * 2;
+                let x = 16 * Math.pow(Math.sin(t), 3);
+                let y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+                
+                const spread = 1 - Math.pow(Math.random(), 2); 
+                const zDepth = (Math.random() - 0.5) * 60 * (1-spread*0.5); 
+
+                const scale = 12;
+                
+                positions.push(
+                    x * scale * spread + (Math.random()-0.5)*5,
+                    y * scale * spread + (Math.random()-0.5)*5,
+                    zDepth
+                );
+
+                const color = CONFIG.colors[Math.floor(Math.random() * CONFIG.colors.length)];
+                const intensity = 0.8 + spread * 0.5; // 提高基础亮度
+                colors.push(color.r * intensity, color.g * intensity, color.b * intensity);
+
+                sizes.push(3 + Math.random() * 12); // 增大粒子尺寸范围
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+
+            const material = new THREE.PointsMaterial({
+                size: 6, // 增大基础尺寸
+                vertexColors: true,
+                map: texture,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.95 // 提高不透明度
+            });
+
+            particlesMesh = new THREE.Points(geometry, material);
+            heartGroup.add(particlesMesh);
+            heartGroup.rotation.x = 0.2; 
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ================= Animation Loop =================
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = Date.now() * 0.001;
+
+            currentScale += (targetScale - currentScale) * CONFIG.lerpSpeed;
+            heartGroup.scale.set(currentScale, currentScale, currentScale);
+
+            heartGroup.rotation.y = Math.sin(time * 0.3) * 0.15;
+            const breathe = Math.sin(time * 1.5) * 0.03 + 1;
+            particlesMesh.scale.set(breathe, breathe, breathe);
+
+            composer.render();
+        }
+
+        // ================= MediaPipe Gesture Setup =================
+        function distance(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+        }
+
+        function onResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                const palmSize = distance(landmarks[0], landmarks[9]); 
+                
+                let tips = [8, 12, 16, 20]; 
+                let avgTipDist = tips.reduce((sum, idx) => sum + distance(landmarks[0], landmarks[idx]), 0) / 4;
+                
+                const openness = avgTipDist / palmSize;
+
+                if (openness > 1.55) {
+                    statusBadge.innerText = "状态：放大 (Open)";
+                    statusBadge.style.background = "rgba(255, 51, 102, 0.6)";
+                    statusBadge.style.borderColor = "#fff";
+                    targetScale = CONFIG.maxScale;
+                } else if (openness < 1.3) {
+                    statusBadge.innerText = "状态：恢复 (Fist)";
+                    statusBadge.style.background = "rgba(100, 100, 100, 0.4)";
+                    statusBadge.style.borderColor = "transparent";
+                    targetScale = CONFIG.baseScale;
+                }
+            } else {
+                statusBadge.innerText = "未检测到手势";
+                statusBadge.style.background = "rgba(255, 255, 255, 0.1)";
+            }
+        }
+
+        // ================= Main Initialization =================
+        window.init = async function() {
+            const loadingScreen = document.getElementById('loading-screen');
+            const startBtn = document.getElementById('start-btn');
+            startBtn.innerText = "正在初始化...";
+            startBtn.disabled = true;
+
+            initThree();
+
+            // 动态加载 MediaPipe 脚本
+            await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js');
+            await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js');
+
+            const videoElement = document.getElementById('input_video');
+            const hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+            
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.5
+            });
+            hands.onResults(onResults);
+
+            const camera = new Camera(videoElement, {
+                onFrame: async () => { await hands.send({image: videoElement}); },
+                width: 320, height: 240
+            });
+
+            try {
+                await camera.start();
+                loadingScreen.style.opacity = 0;
+                setTimeout(() => loadingScreen.style.display = 'none', 500);
+            } catch(err) {
+                startBtn.innerText = "摄像头启动失败";
+                alert("无法访问摄像头,请确保给予权限并使用 HTTPS 或本地环境。");
+            }
+        }
+
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+    </script>
+</body>
+</html>
