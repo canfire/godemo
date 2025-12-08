@@ -17,7 +17,8 @@ func main() {
 	// chainStreamTest()
 	// LambdaDemo()
 	// ParallerDemo()
-	BranchDemo()
+	// BranchDemo()
+	CallBackDemo()
 }
 
 func chainTest() {
