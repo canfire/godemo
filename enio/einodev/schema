@@ -1,0 +1,163 @@
+{
+  "name": "testGraph",
+  "node_trigger_mode": "AnyPredecessor",
+  "input_type": {
+    "title": "string"
+  },
+  "output_type": {
+    "title": "string"
+  },
+  "gen_local_state": {
+    "is_set": false
+  },
+  "id": "afy1dX",
+  "component": "Graph",
+  "nodes": [
+    {
+      "id": "start",
+      "key": "start",
+      "name": "Start",
+      "type": "start",
+      "layoutData": {
+        "position": {
+          "x": -502,
+          "y": -19
+        }
+      }
+    },
+    {
+      "id": "end",
+      "key": "end",
+      "name": "End",
+      "type": "end",
+      "layoutData": {
+        "position": {
+          "x": 425,
+          "y": -23
+        }
+      }
+    },
+    {
+      "id": "G_iWES",
+      "key": "Lambda1",
+      "name": "",
+      "type": "Lambda",
+      "component_schema": {
+        "name": "Lambda",
+        "component": "Lambda",
+        "component_source": "custom",
+        "input_type": {
+          "title": "any",
+          "description": ""
+        },
+        "output_type": {
+          "title": "any",
+          "description": ""
+        },
+        "extra_property": {
+          "schema": {
+            "type": "object",
+            "description": "",
+            "properties": {
+              "has_option": {
+                "type": "boolean",
+                "description": ""
+              },
+              "interaction_type": {
+                "type": "string",
+                "description": "",
+                "enum": [
+                  "invoke",
+                  "stream",
+                  "collect",
+                  "transform"
+                ]
+              },
+              "option_package_path": {
+                "type": "string",
+                "description": ""
+              },
+              "option_type_name": {
+                "type": "string",
+                "description": ""
+              }
+            },
+            "required": [
+              "interaction_type",
+              "has_option"
+            ]
+          },
+          "extra_property_input": "{\"interaction_type\":\"invoke\",\"has_option\":false}"
+        },
+        "is_io_type_mutable": true,
+        "version": "1.0.0"
+      },
+      "node_option": {},
+      "layoutData": {
+        "position": {
+          "x": -194,
+          "y": -90
+        }
+      }
+    },
+    {
+      "id": "Z54bB9",
+      "key": "CustomChatModel2",
+      "name": "",
+      "type": "ChatModel",
+      "component_schema": {
+        "name": "ChatModel",
+        "component": "ChatModel",
+        "component_source": "custom",
+        "input_type": {
+          "title": "[]*schema.Message",
+          "description": ""
+        },
+        "output_type": {
+          "title": "*schema.Message",
+          "description": ""
+        },
+        "is_io_type_mutable": false,
+        "version": "1.0.0"
+      },
+      "node_option": {},
+      "layoutData": {
+        "position": {
+          "x": 131,
+          "y": -48
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "",
+      "name": "",
+      "sourceWorkflowNodeId": "start",
+      "targetWorkflowNodeId": "G_iWES",
+      "source_node_key": "start",
+      "target_node_key": "Lambda1"
+    },
+    {
+      "id": "",
+      "name": "",
+      "sourceWorkflowNodeId": "Z54bB9",
+      "targetWorkflowNodeId": "end",
+      "source_node_key": "CustomChatModel2",
+      "target_node_key": "end"
+    },
+    {
+      "id": "",
+      "name": "",
+      "sourceWorkflowNodeId": "G_iWES",
+      "targetWorkflowNodeId": "Z54bB9",
+      "source_node_key": "Lambda1",
+      "target_node_key": "CustomChatModel2"
+    }
+  ],
+  "branches": [],
+  "nodeCounter": {
+    "ChatModel": 2,
+    "Lambda": 3
+  }
+}
