@@ -1,13 +1,16 @@
 package htmltopdf
 
 import (
+	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"github.com/playwright-community/playwright-go"
 	"github.com/skip2/go-qrcode"
 )
@@ -167,26 +170,12 @@ func GetPDF(ctx context.Context, html string, qrContent string) (*PDFResult, err
 		return nil, fmt.Errorf("failed to unmarshal anchors: %w", err)
 	}
 
-	// 生成二维码 base64 图片
-	qrBase64 := ""
-	if qrContent != "" {
-		qrPNG, err := qrcode.Encode(qrContent, qrcode.Medium, 60) // 60x60 像素
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate qrcode: %w", err)
-		}
-		qrBase64 = base64.StdEncoding.EncodeToString(qrPNG)
-	}
-
-	// 构建 HeaderTemplate，左上角放二维码和页码
-	headerTemplate := `<span></span>` // 默认空白
-	if qrBase64 != "" {
-		headerTemplate = fmt.Sprintf(`
-			<div style="width: 100%%; padding: 8px 16px; display: flex; align-items: center; font-size: 10px; color: #666;">
-				<img src="data:image/png;base64,%s" style="width: 50px; height: 50px; margin-right: 8px;" />
-				<span>第 <span class="pageNumber"></span> 页 / 共 <span class="totalPages"></span> 页</span>
-			</div>
-		`, qrBase64)
-	}
+	// 先生成不带二维码的 PDF，页头只显示页码
+	headerTemplate := `
+		<div style="width: 100%; padding: 8px 16px; padding-left: 70px; font-size: 10px; color: #666;">
+			<span>第 <span class="pageNumber"></span> 页 / 共 <span class="totalPages"></span> 页</span>
+		</div>
+	`
 
 	// 生成 PDF
 	pdfBytes, err := page.PDF(playwright.PagePdfOptions{
@@ -207,10 +196,83 @@ func GetPDF(ctx context.Context, html string, qrContent string) (*PDFResult, err
 		return nil, fmt.Errorf("failed to generate pdf: %w", err)
 	}
 
+	// 如果提供了二维码内容，为每页添加带页码的二维码
+	if qrContent != "" {
+		pdfBytes, err = addQRCodeToPages(pdfBytes, qrContent)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add qrcode to pages: %w", err)
+		}
+	}
+
 	return &PDFResult{
 		PDFBytes: pdfBytes,
 		Anchors:  anchors,
 	}, nil
+}
+
+// addQRCodeToPages 为 PDF 的每一页添加带页码的二维码
+func addQRCodeToPages(pdfBytes []byte, qrContent string) ([]byte, error) {
+	// 读取 PDF 获取页数
+	conf := model.NewDefaultConfiguration()
+	ctx, err := api.ReadContext(bytes.NewReader(pdfBytes), conf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read pdf context: %w", err)
+	}
+	if err := ctx.EnsurePageCount(); err != nil {
+		return nil, fmt.Errorf("failed to ensure page count: %w", err)
+	}
+
+	pageCount := ctx.PageCount
+	currentPDF := pdfBytes
+
+	// 为每一页生成带页码的二维码并添加为水印
+	for pageNum := 1; pageNum <= pageCount; pageNum++ {
+		// 生成包含页码的二维码内容
+		qrContentWithPage := fmt.Sprintf("%s&page=%d&total=%d", qrContent, pageNum, pageCount)
+
+		// 生成二维码图片 (256x256 像素，保证清晰度)
+		qrPNG, err := qrcode.Encode(qrContentWithPage, qrcode.Medium, 256)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate qrcode for page %d: %w", pageNum, err)
+		}
+
+		// 保存二维码到临时文件
+		tmpFile, err := os.CreateTemp("", "qrcode-*.png")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create temp file: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+		if _, err := tmpFile.Write(qrPNG); err != nil {
+			tmpFile.Close()
+			os.Remove(tmpPath)
+			return nil, fmt.Errorf("failed to write qrcode to temp file: %w", err)
+		}
+		tmpFile.Close()
+
+		// 使用 pdfcpu 添加图片水印
+		// pos:tl 左上角, off:8 20 偏移（距左8点，距顶20点）, scalefactor:0.07, rot:0 不旋转
+		desc := "pos:tl, off:8 -3, scalefactor:0.07, rot:0"
+		wm, err := api.ImageWatermark(tmpPath, desc, true, false, types.POINTS)
+		if err != nil {
+			os.Remove(tmpPath)
+			return nil, fmt.Errorf("failed to create watermark for page %d: %w", pageNum, err)
+		}
+
+		// 应用水印到指定页
+		inBuf := bytes.NewReader(currentPDF)
+		outBuf := &bytes.Buffer{}
+		selectedPages := []string{fmt.Sprintf("%d", pageNum)}
+		if err := api.AddWatermarks(inBuf, outBuf, selectedPages, wm, nil); err != nil {
+			os.Remove(tmpPath)
+			return nil, fmt.Errorf("failed to add watermark for page %d: %w", pageNum, err)
+		}
+		currentPDF = outBuf.Bytes()
+
+		// 删除临时文件
+		os.Remove(tmpPath)
+	}
+
+	return currentPDF, nil
 }
 
 type Anchor struct {
@@ -242,10 +304,10 @@ func GetBrowser(ctx context.Context) (playwright.Browser, error) {
 		log.Fatalf("failed to run playwright %v", err)
 		return nil, err
 	}
-	launchOptions := playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(false), // 展示浏览器界面
-	}
-	browser, err := pw.Chromium.Launch(launchOptions)
+	// launchOptions := playwright.BrowserTypeLaunchOptions{
+	// 	Headless: playwright.Bool(false), // 展示浏览器界面
+	// }
+	browser, err := pw.Chromium.Launch()
 	if err != nil {
 		log.Fatalf("failed to launch browser %v", err)
 		return nil, err
