@@ -39,3 +39,7 @@ func TestPlayWright(t *testing.T) {
 	fmt.Println("✓ PDF 生成成功: contract.pdf")
 	fmt.Println("✓ 锚点信息已保存: anchors.json")
 }
+
+func TestPhotoPDF(t *testing.T) {
+	PhotoPDF()
+}

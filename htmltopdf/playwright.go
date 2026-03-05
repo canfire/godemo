@@ -30,7 +30,7 @@ func GetPDF(ctx context.Context, html string, qrContent string) (*PDFResult, err
 
 	userDataMap := map[string]interface{}{
 		"userInfo": map[string]interface{}{
-			"jwt_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjIjo0LCJ0IjoxNzY5MDY0NTYyLCJlIjoxNzcwNzkyNTYyLCJpIjoiZG90cGVuIiwiYSI6InVzZXIiLCJsIjo4fQ.JYnBGjR0Sq4aDhYRKUBpVRhfYnx_tErR-WR9Po4bdGA",
+			"jwt_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjIjoxOTEsInQiOjE3NzE5ODQ3NjEsImUiOjE3NzM3MTI3NjEsImkiOiJkb3RwZW4iLCJhIjoidXNlciIsImwiOjh9.wvdgxOYwo4ntwNG7pfgPuhJ5WPA4C71ceHFM7t4kixI",
 		},
 	}
 	userDataJSONBytes, _ := json.Marshal(userDataMap)
@@ -46,35 +46,35 @@ func GetPDF(ctx context.Context, html string, qrContent string) (*PDFResult, err
 	if err != nil {
 		log.Fatalf("failed to create page %v", err)
 	}
-	_, _ = page.Goto("http://172.16.0.71:5173/preview/homework?id=32")
+	_, _ = page.Goto("https://app.test.dotpen.cn/preview/homework?id=565")
 
 	_, err = page.Evaluate(fmt.Sprintf(`() => {localStorage.setItem("dotpen-yygu-user", '%s') }`, userDataJSON))
 	if err != nil {
 		log.Fatalf("failed to create page %v", err)
 	}
 
-	_, _ = page.Goto("http://172.16.0.71:5173/preview/homework?id=32", playwright.PageGotoOptions{
+	_, _ = page.Goto("https://app.test.dotpen.cn/preview/homework?id=565", playwright.PageGotoOptions{
 		WaitUntil: playwright.WaitUntilStateNetworkidle,
 	})
 
 	// time.Sleep(time.Hour)
 	// Wait for MathJax to finish typesetting to avoid blank formulas in PDF
 	if _, err := page.Evaluate(`() => {
-    if (!window.MathJax) return null;
-    if (MathJax.startup && MathJax.typesetPromise) {
-      return MathJax.startup.promise.then(() => MathJax.typesetPromise());
-    }
-    if (MathJax.Hub && MathJax.Hub.Queue) {
-      return new Promise((resolve, reject) => {
-        try {
-          MathJax.Hub.Queue(["Typeset", MathJax.Hub, () => resolve(null)]);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    }
-    return null;
-  }`); err != nil {
+	    if (!window.MathJax) return null;
+	    if (MathJax.startup && MathJax.typesetPromise) {
+	      return MathJax.startup.promise.then(() => MathJax.typesetPromise());
+	    }
+	    if (MathJax.Hub && MathJax.Hub.Queue) {
+	      return new Promise((resolve, reject) => {
+	        try {
+	          MathJax.Hub.Queue(["Typeset", MathJax.Hub, () => resolve(null)]);
+	        } catch (e) {
+	          reject(e);
+	        }
+	      });
+	    }
+	    return null;
+	  }`); err != nil {
 		return nil, fmt.Errorf("failed to wait for mathjax: %w", err)
 	}
 
